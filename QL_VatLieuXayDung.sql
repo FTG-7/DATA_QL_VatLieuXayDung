@@ -365,3 +365,89 @@ BEGIN
     GROUP BY DAY(NGAYLAP_XUAT);
 END
 
+/*--------------------------------------------------------------------------------------*/
+/*Trigger kiểm tra ràng buộc trước khi thêm một người dùng mới:
+*/
+CREATE TRIGGER Trg_Check_Insert_NGUOIDUNG
+ON NGUOIDUNG
+FOR INSERT
+AS
+BEGIN
+    IF EXISTS (SELECT 1 FROM NGUOIDUNG WHERE USERNAME = (SELECT USERNAME FROM inserted))
+    BEGIN
+        PRINT (N'Tên người dùng đã tồn tại.');
+        ROLLBACK TRANSACTION;
+    END
+    IF (SELECT LOAI FROM inserted) NOT IN (1, 2) -- Loại 1 cho nhân viên, Loại 2 cho admin
+    BEGIN
+        PRINT (N'Loại người dùng không hợp lệ.');
+        ROLLBACK TRANSACTION;
+    END
+END;
+/*--------------------------------------------------------------------------------------*/
+
+/*Trigger kiểm tra ràng buộc trước khi thay đổi thông tin một nhân viên:
+*/
+CREATE TRIGGER Trg_Check_Update_NHANVIEN
+ON NHANVIEN
+FOR UPDATE
+AS
+BEGIN
+    IF EXISTS (SELECT 1 FROM HOADON_XUAT WHERE MANV = (SELECT MANV FROM updated) ) OR EXISTS (SELECT 1 FROM HOADON_NHAP WHERE MANV = updated.MANV)
+    BEGIN
+        PRINT (N'Không thể cập nhật thông tin nhân viên này vì đã có hóa đơn liên quan.');
+        ROLLBACK TRANSACTION;
+    END
+END;
+/*----------------------------------------------------------------------------------------------------------------------------------*/
+/*Trigger tự động tính tổng số tiền cho mỗi hóa đơn nhập sau khi thêm chi tiết hóa đơn nhập:
+*/
+CREATE TRIGGER Trg_Calculate_Total_HDN
+ON CHITIET_HD_NHAP
+AFTER INSERT
+AS
+BEGIN
+    UPDATE HOADON_NHAP
+    SET HOADON_NHAP.TONGTIEN = (SELECT SUM(SOLUONG_NHAP * DONGIA_NHAP) FROM CHITIET_HD_NHAP WHERE SO_HD_NHAP = inserted.SO_HD_NHAP)
+    WHERE SO_HD_NHAP = inserted.SO_HD_NHAP;
+END;
+/*----------------------------------------------------------------------------------------------------------------------------------*/
+
+/*Trigger kiểm tra ràng buộc trước khi xóa một loại hàng:*/
+CREATE TRIGGER Trg_Check_Delete_LoaiHang
+ON LOAIHANG
+INSTEAD OF DELETE
+AS
+BEGIN
+    IF EXISTS (SELECT 1 FROM HANGHOA WHERE MALOAI = (SELECT MALOAI FROM deleted) )
+    BEGIN
+        PRINT (N'Không thể xóa loại hàng này vì đã có hàng hóa liên quan.');
+    END
+    ELSE
+    BEGIN
+        DELETE FROM LOAIHANG WHERE MALOAI = (SELECT MALOAI FROM deleted);
+    END
+END;
+/*Trigger tự động cập nhật trạng thái "CÒN KINH DOANH" của loại hàng sau khi thêm hoặc cập nhật hàng hóa:
+*/
+CREATE TRIGGER Trg_Update_Flag_LoaiHang_YES
+ON HANGHOA
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    UPDATE LOAIHANG
+    SET LOAIHANG.FLAG = 1
+    WHERE LOAIHANG.MALOAI IN (SELECT DISTINCT MALOAI FROM inserted);
+END;
+/*---------------------------------------------------------------------------------------------------------------*/
+/*Trigger tự động cập nhật trạng thái "KO KINH DOANH" của loại hàng sau khi thêm hoặc cập nhật hàng hóa:
+*/
+CREATE TRIGGER Trg_Update_Flag_LoaiHang_NO
+ON HANGHOA
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    UPDATE LOAIHANG
+    SET LOAIHANG.FLAG = 0
+    WHERE LOAIHANG.MALOAI NOT IN (SELECT DISTINCT MALOAI FROM inserted);
+END;
