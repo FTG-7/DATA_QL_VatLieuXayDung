@@ -235,4 +235,133 @@ END
 
 DECLARE @THONGBAO NVARCHAR(100)
 SET @THONGBAO = N'ĐÃ TĂNG: ' + CAST(@LANTANG AS NVARCHAR(10)) + N' LẦN'
+go
+SELECT * FROM 
+-------------------------procedure-----------------------------------------------------------------
+--Thêm Vật Liệu:
+CREATE PROCEDURE ThemVatLieu (
+    @MAHH varchar(15) ,
+    @MALOAI VARCHAR(15) ,
+	@TENHH NVARCHAR(50) ,
+    @DONVI_TINH NVARCHAR(50),
+	@XUATXU NVARCHAR(50)
+)
+AS
+BEGIN
+  --  INSERT INTO VatLieu (TenVatLieu, SoLuong, Gia)
+  --  VALUES (@TenVatLieu, @SoLuong, @Gia);
+	INSERT INTO HANGHOA (MAHH, MALOAI, TENHH, DONVI_TINH, XUATXU)
+	VALUES(@MAHH, @MALOAI, @TENHH,   @DONVI_TINH, @XUATXU)
+    
+    SELECT SCOPE_IDENTITY() AS NewVatLieuID;
+END
+
+--Cập Nhật Số Lượng Vật Liệu:
+
+CREATE PROCEDURE CapNhatSoLuongVatLieu
+AS
+BEGIN
+    UPDATE KHO
+    SET SoLuong = (SELECT COUNT(MAHH) FROM HANGHOA WHERE HANGHOA.MAHH = KHO.MAHH GROUP BY IDKHO)
+END
+--Xóa Vật Liệu:
+CREATE PROCEDURE XoaVatLieu (
+     @MAHH varchar(15)
+)
+AS
+BEGIN
+    DELETE FROM HANGHOA
+    WHERE MAHH = @MAHH;
+END
+
+--Danh Sách Các Giao Dịch Gần Đây:
+
+CREATE PROCEDURE LayTatCaHoaDonTrongNgayGanNhat
+AS
+BEGIN
+    SELECT * 
+    FROM HOADON_XUAT
+    WHERE NGAYLAP_XUAT = CONVERT(DATE, GETDATE())
+    ORDER BY NGAYLAP_XUAT DESC;
+END
+
+EXEC LayTatCaHoaDonTrongNgayGanNhat;
+
+SELECT* FROM HOADON_XUAT
+
+INSERT INTO HOADON_XUAT (SO_HD_XUAT, MAKH, MANV, NGAYLAP_XUAT)
+VALUES
+    ('HDX009', 'KH001', 'NV001', '2023-11-22')
+
+--Tổng Số Lượng Vật Liệu Trong Kho:
+CREATE PROCEDURE TongSoLuongVatLieuTrongKho (
+    @MAHH varchar(15)
+)
+AS
+BEGIN
+    SELECT SUM(SoLuong) AS TongSoLuong
+    FROM KHO
+    WHERE MAHH = @MAHH;
+END
+-------------------------FUNCTION-----------------------------------------------------------------
+
+--Tính Tổng Giá Trị Giao Dịch Cho Một Vật Liệu:
+CREATE FUNCTION TongGiaTriGiaoDich (
+    @MAHH varchar(15)
+)
+RETURNS MONEY
+AS
+BEGIN
+    DECLARE @TongGiaTri MONEY;
+    SELECT @TongGiaTri = SUM(DONGIA_XUAT * SOLUONG_XUAT)
+    FROM CHITIET_HD_XUAT CTX,KHO K
+    WHERE CTX.IDKHO = K.IDKHO AND K.MAHH = @MAHH;
+    RETURN @TongGiaTri;
+END
+GO
+--Tính Tổng Giá Trị Giao Dịch Cho Một KHACH HANG:
+
+CREATE FUNCTION TongGiaTriGiaoDichKHACHHANG (
+    @MAKH varchar(15)
+)
+RETURNS MONEY
+AS
+BEGIN
+    DECLARE @TongGiaTri MONEY;
+    SELECT @TongGiaTri = SUM(DONGIA_XUAT * SOLUONG_XUAT)
+    FROM CHITIET_HD_XUAT CTX,HOADON_XUAT HDX
+    WHERE CTX.SO_HD_XUAT = HDX.SO_HD_XUAT AND HDX.MAKH=@MAKH;
+    RETURN @TongGiaTri;
+END
+
+--Kiểm Tra Số Lượng Tồn Kho:
+
+CREATE FUNCTION KiemTraSoLuongTonKho (
+     @MAHH varchar(15)
+  
+)
+RETURNS INT
+AS
+BEGIN
+    DECLARE @SoLuongTonKho INT;
+    SELECT @SoLuongTonKho = SoLuong
+    FROM KHO
+    WHERE MAHH = @MAHH;
+
+    RETURN @SoLuongTonKho;
+END
+GO
+--Thống Kê Doanh Thu Theo Tháng:
+
+CREATE PROCEDURE ThongKeDoanhThuTheoThang (
+    @THANG INT
+)
+AS
+BEGIN
+
+    SELECT DAY(NGAYLAP_XUAT) AS Thang, SUM(SOLUONG_XUAT*DONGIA_XUAT) AS DoanhThu
+    FROM HOADON_XUAT, CHITIET_HD_XUAT
+    WHERE MONTH(NGAYLAP_XUAT) = @THANG
+    GROUP BY DAY(NGAYLAP_XUAT);
+END
 
