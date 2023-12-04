@@ -217,7 +217,7 @@ SELECT* FROM CHITIET_HD_NHAP
 SELECT* FROM CHITIET_HD_XUAT
 SELECT* FROM LOAIHANG
 SELECT* FROM KHO
-
+select * from KHO,HANGHOA,LOAIHANG
 -------------------------------------------------------------------------
 SELECT SUM(SOLUONG) FROM KHO
 DECLARE @LANTANG INT
@@ -253,17 +253,25 @@ BEGIN
 	INSERT INTO HANGHOA (MAHH, MALOAI, TENHH, DONVI_TINH, XUATXU)
 	VALUES(@MAHH, @MALOAI, @TENHH,   @DONVI_TINH, @XUATXU)
     
-    SELECT SCOPE_IDENTITY() AS NewVatLieuID;
 END
 
---Cập Nhật Số Lượng Vật Liệu:
+EXEC ThemVatLieu
+    @MAHH = 'MMM',
+    @MALOAI = 'LH001',
+    @TENHH = N'Tên hàng hóa mới',
+    @DONVI_TINH = N'Đơn vị tính mới',
+    @XUATXU = N'Xuất xứ mới';
 
+--Cập Nhật Số Lượng Vật Liệu:
 CREATE PROCEDURE CapNhatSoLuongVatLieu
 AS
 BEGIN
     UPDATE KHO
-    SET SoLuong = (SELECT COUNT(MAHH) FROM HANGHOA WHERE HANGHOA.MAHH = KHO.MAHH GROUP BY IDKHO)
+    SET KHO.SOLUONG = (SELECT COUNT(HANGHOA.MAHH) FROM HANGHOA WHERE HANGHOA.MAHH = KHO.MAHH)
 END
+-- Gọi Stored Procedure
+EXEC CapNhatSoLuongVatLieu;
+
 --Xóa Vật Liệu:
 CREATE PROCEDURE XoaVatLieu (
      @MAHH varchar(15)
@@ -273,19 +281,23 @@ BEGIN
     DELETE FROM HANGHOA
     WHERE MAHH = @MAHH;
 END
+-- Gọi Stored Procedure và truyền tham số
+EXEC XoaVatLieu @MAHH = 'MMM';
 
 --Danh Sách Các Giao Dịch Gần Đây:
 
-CREATE PROCEDURE LayTatCaHoaDonTrongNgayGanNhat
+CREATE PROCEDURE LayTatCaHoaDonTrongNgay
 AS
 BEGIN
     SELECT * 
     FROM HOADON_XUAT
-    WHERE NGAYLAP_XUAT = CONVERT(DATE, GETDATE())
+    WHERE CONVERT(DATE, NGAYLAP_XUAT) = CONVERT(DATE, GETDATE())
     ORDER BY NGAYLAP_XUAT DESC;
 END
-
-EXEC LayTatCaHoaDonTrongNgayGanNhat;
+INSERT INTO HOADON_XUAT (SO_HD_XUAT, MAKH, MANV, NGAYLAP_XUAT)
+VALUES
+    ('HDX011', 'KH001', 'NV001', '2023-04-12')
+EXEC LayTatCaHoaDonTrongNgay;
 
 SELECT* FROM HOADON_XUAT
 
@@ -303,6 +315,8 @@ BEGIN
     FROM KHO
     WHERE MAHH = @MAHH;
 END
+
+EXEC TongSoLuongVatLieuTrongKho @MAHH = 'HH001';
 -------------------------FUNCTION-----------------------------------------------------------------
 
 --Tính Tổng Giá Trị Giao Dịch Cho Một Vật Liệu:
@@ -319,26 +333,30 @@ BEGIN
     RETURN @TongGiaTri;
 END
 GO
---Tính Tổng Giá Trị Giao Dịch Cho Một KHACH HANG:
 
+-- Gọi hàm từ câu truy vấn SELECT
+SELECT dbo.TongGiaTriGiaoDich('HH01') AS TongGiaTri;
+
+--Tính Tổng Giá Trị Giao Dịch Cho Một KHACH HANG:
+GO
+SELECT * FROM  CHITIET_HD_XUAT CTX,HOADON_XUAT HDX WHERE CTX.SO_HD_XUAT= HDX.SO_HD_XUAT AND HDX.MAKH ='KH003'
 CREATE FUNCTION TongGiaTriGiaoDichKHACHHANG (
     @MAKH varchar(15)
 )
-RETURNS MONEY
+RETURNS FLOAT
 AS
 BEGIN
-    DECLARE @TongGiaTri MONEY;
+    DECLARE @TongGiaTri FLOAT;
     SELECT @TongGiaTri = SUM(DONGIA_XUAT * SOLUONG_XUAT)
     FROM CHITIET_HD_XUAT CTX,HOADON_XUAT HDX
     WHERE CTX.SO_HD_XUAT = HDX.SO_HD_XUAT AND HDX.MAKH=@MAKH;
     RETURN @TongGiaTri;
 END
+SELECT dbo.TongGiaTriGiaoDichKHACHHANG('KH003') AS TongGiaTri;
 
 --Kiểm Tra Số Lượng Tồn Kho:
-
 CREATE FUNCTION KiemTraSoLuongTonKho (
      @MAHH varchar(15)
-  
 )
 RETURNS INT
 AS
@@ -351,26 +369,36 @@ BEGIN
     RETURN @SoLuongTonKho;
 END
 GO
---Thống Kê Doanh Thu Theo Tháng:
 
-CREATE PROCEDURE ThongKeDoanhThuTheoThang (
-    @THANG INT
+--Tính Tổng Lượng Vật Liệu Nhập Theo Tháng:
+CREATE FUNCTION TinhTongLuongVatLieuNhapTheoThang(
+    @Thang INT
 )
+RETURNS INT
 AS
 BEGIN
+    DECLARE @TongLuongNhap INT;
+    SELECT @TongLuongNhap = SUM(SOLUONG_NHAP)
+    FROM CHITIET_HD_NHAP, HOADON_NHAP
+    WHERE MONTH(NGAYLAP_NHAP) = @Thang AND CHITIET_HD_NHAP.SO_HD_NHAP = HOADON_NHAP.SO_HD_NHAP;
+    RETURN @TongLuongNhap;
+END;
 
-    SELECT DAY(NGAYLAP_XUAT) AS Thang, SUM(SOLUONG_XUAT*DONGIA_XUAT) AS DoanhThu
-    FROM HOADON_XUAT, CHITIET_HD_XUAT
-    WHERE MONTH(NGAYLAP_XUAT) = @THANG
-    GROUP BY DAY(NGAYLAP_XUAT);
-END
+-- Gọi hàm và lấy kết quả
+DECLARE @Thang INT;
+SET @Thang = 9; -- Thay đổi với tháng mong muốn
+
+DECLARE @TongLuongNhap INT;
+SET @TongLuongNhap = dbo.TinhTongLuongVatLieuNhapTheoThang(@Thang);
+-- In hoặc sử dụng kết quả theo nhu cầu
+PRINT N'Tổng lượng vật liệu nhập cho tháng ' + CAST(@Thang AS NVARCHAR) + ': ' + CAST(@TongLuongNhap AS NVARCHAR);
 
 /*--------------------------------------------------------------------------------------*/
 /*Trigger kiểm tra ràng buộc trước khi thêm một người dùng mới:
 */
 CREATE TRIGGER Trg_Check_Insert_NGUOIDUNG
 ON NGUOIDUNG
-FOR INSERT
+INSTEAD of INSERT
 AS
 BEGIN
     IF EXISTS (SELECT 1 FROM NGUOIDUNG WHERE USERNAME = (SELECT USERNAME FROM inserted))
@@ -384,10 +412,17 @@ BEGIN
         ROLLBACK TRANSACTION;
     END
 END;
+SELECT*FROM NGUOIDUNG
+
+INSERT INTO NGUOIDUNG (USERNAME, MATKHAU, LOAI, ACTIVE)
+VALUES
+    ('user11', 'password12', 3, 1)
 /*--------------------------------------------------------------------------------------*/
+SELECT*FROM LOAIHANG,HANGHOA,KHO WHERE LOAIHANG.MALOAI=HANGHOA.MALOAI AND KHO.MAHH = HANGHOA.MAHH
 
 /*Trigger kiểm tra ràng buộc trước khi thay đổi thông tin một nhân viên:
 */
+
 CREATE TRIGGER Trg_Check_Update_NHANVIEN
 ON NHANVIEN
 FOR UPDATE
@@ -399,18 +434,40 @@ BEGIN
         ROLLBACK TRANSACTION;
     END
 END;
+
+CREATE TRIGGER Trg_KT_Update_NHANVIEN
+ON NHANVIEN
+FOR UPDATE
+AS
+BEGIN
+    IF EXISTS (
+        SELECT 1 
+        FROM HOADON_XUAT 
+        WHERE MANV IN (SELECT MANV FROM INSERTED)
+    ) OR EXISTS (
+        SELECT 1 
+        FROM HOADON_NHAP 
+        WHERE MANV IN (SELECT MANV FROM INSERTED)
+    )
+    BEGIN
+        PRINT (N'Không thể cập nhật thông tin nhân viên này vì đã có hóa đơn liên quan.');
+        ROLLBACK TRANSACTION;
+    END
+END;
+
+SELECT*FROM NHANVIEN
+INSERT INTO NHANVIEN (MANV, TENNV, GIOITINH, NGAYSINH, DIACHI, SDT)
+VALUES
+    ('NV00111', N'ABC', N'Nam', '1990-01-15', N'123 Đường X, Quận Y', '0123456789')
+UPDATE NHANVIEN
+SET TENNV = 'MM', -- Thay đổi thông tin cần cập nhật
+    DiaChi = '123'
+WHERE MaNV = 'NV00111';
+
 /*----------------------------------------------------------------------------------------------------------------------------------*/
 /*Trigger tự động tính tổng số tiền cho mỗi hóa đơn nhập sau khi thêm chi tiết hóa đơn nhập:
 */
-CREATE TRIGGER Trg_Calculate_Total_HDN
-ON CHITIET_HD_NHAP
-AFTER INSERT
-AS
-BEGIN
-    UPDATE HOADON_NHAP
-    SET HOADON_NHAP.TONGTIEN = (SELECT SUM(SOLUONG_NHAP * DONGIA_NHAP) FROM CHITIET_HD_NHAP WHERE SO_HD_NHAP = inserted.SO_HD_NHAP)
-    WHERE SO_HD_NHAP = inserted.SO_HD_NHAP;
-END;
+
 /*----------------------------------------------------------------------------------------------------------------------------------*/
 
 /*Trigger kiểm tra ràng buộc trước khi xóa một loại hàng:*/
@@ -422,32 +479,39 @@ BEGIN
     IF EXISTS (SELECT 1 FROM HANGHOA WHERE MALOAI = (SELECT MALOAI FROM deleted) )
     BEGIN
         PRINT (N'Không thể xóa loại hàng này vì đã có hàng hóa liên quan.');
+
     END
     ELSE
     BEGIN
         DELETE FROM LOAIHANG WHERE MALOAI = (SELECT MALOAI FROM deleted);
     END
 END;
+DELETE FROM LOAIHANG WHERE MALOAI = 'LH001';
+SELECT *FROM LOAIHANG
+INSERT INTO LOAIHANG (MALOAI, TENLOAI, MOTA, FLAG)
+VALUES
+    ('LH00111', N'Điện tử', N'Loại hàng điện tử', 1)
 /*Trigger tự động cập nhật trạng thái "CÒN KINH DOANH" của loại hàng sau khi thêm hoặc cập nhật hàng hóa:
 */
-CREATE TRIGGER Trg_Update_Flag_LoaiHang_YES
-ON HANGHOA
+CREATE TRIGGER Trg_Update_Flag_LoaiHang
+ON LOAIHANG
 AFTER INSERT, UPDATE
 AS
 BEGIN
     UPDATE LOAIHANG
-    SET LOAIHANG.FLAG = 1
-    WHERE LOAIHANG.MALOAI IN (SELECT DISTINCT MALOAI FROM inserted);
+    SET LOAIHANG.FLAG = 
+        CASE 
+            WHEN EXISTS (SELECT 1 FROM HANGHOA WHERE HANGHOA.MALOAI = LOAIHANG.MALOAI) THEN 1
+            ELSE 0
+        END
 END;
+
+
+SELECT*FROM LOAIHANG,HANGHOA WHERE LOAIHANG.MALOAI = HANGHOA.MALOAI
+INSERT INTO LOAIHANG (MALOAI, TENLOAI, MOTA, FLAG)
+VALUES
+    ('LH0010', N'Điện tử', N'Loại hàng điện tử', 1)
 /*---------------------------------------------------------------------------------------------------------------*/
 /*Trigger tự động cập nhật trạng thái "KO KINH DOANH" của loại hàng sau khi thêm hoặc cập nhật hàng hóa:
 */
-CREATE TRIGGER Trg_Update_Flag_LoaiHang_NO
-ON HANGHOA
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    UPDATE LOAIHANG
-    SET LOAIHANG.FLAG = 0
-    WHERE LOAIHANG.MALOAI NOT IN (SELECT DISTINCT MALOAI FROM inserted);
-END;
+
